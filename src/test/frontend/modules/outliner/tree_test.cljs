@@ -17,15 +17,32 @@
                (catch js/Error e nil))]
     (when r (->TestBlock r))))
 
+
+
+
+
 (def block-react-refs (atom {}))
+
+(defn prn-2-3-2-18
+  "should remove"
+  [msg parent-id left-id x]
+  (when (or
+          (= [parent-id left-id] [2 3])
+          (= [parent-id left-id] [2 18]))
+    (prn msg [parent-id left-id] x)))
 
 (defn save-block-refs
   [parent-id left-id block-value]
   (let [ref-key [parent-id left-id]]
+    (prn-2-3-2-18 "save-block-refs" parent-id left-id (get-in block-value [:data :block/id]))
     (if-let [ref-atom (get @block-react-refs ref-key)]
-      (do (reset! ref-atom block-value)
+      (do (reset! ref-atom {:block block-value
+                            :parent-id parent-id
+                            :left-id left-id})
           ref-atom)
-      (let [block-ref (atom block-value)]
+      (let [block-ref (atom {:block block-value
+                             :parent-id parent-id
+                             :left-id left-id})]
         (swap! block-react-refs assoc ref-key block-ref)
         block-ref))))
 
@@ -33,7 +50,9 @@
   [parent-id left-id]
   (let [ref-key [parent-id left-id]]
     (when-let [ref-atom (get @block-react-refs ref-key)]
-      (reset! ref-atom nil))))
+      (reset! ref-atom {:block nil
+                        :parent-id parent-id
+                        :left-id left-id}))))
 
 (defn get-block-from-react-refs
   [parent-id left-id]
@@ -42,16 +61,24 @@
       (assert
         (instance? cljs.core/Atom (atom nil))
         "block-react-ref should be atom.")
-      (deref ref))))
+      ref)))
 
 (defn get-block-by-parent-&-left
   [parent-id left-id]
-  (let [c (conn/get-outliner-conn)
-        r (db-outliner/get-by-parent-&-left
-            c [:block/id parent-id] [:block/id left-id])
-        block (when r (->TestBlock r))
-        block-ref (save-block-refs parent-id left-id block)]
-    (r/react block-ref)))
+  (let [block-ref
+        (if-let [block-ref (get-block-from-react-refs parent-id left-id)]
+          block-ref
+          (let [c (conn/get-outliner-conn)
+                r (db-outliner/get-by-parent-&-left
+                    c [:block/id parent-id] [:block/id left-id])
+                block (when r (->TestBlock r))
+                _ (prn-2-3-2-18 "get-block-by-parent-&-left" parent-id left-id
+                    block
+                    #_(get-in block [:block :block/id]))
+                block-ref (save-block-refs parent-id left-id block)]
+            block-ref))]
+    (-> (r/react block-ref)
+      :block)))
 
 (defn ensure-block-id
   [id]
@@ -111,7 +138,9 @@
       (if-let [old-block (get-block-by-id block-id)]
         (let [parent-id (tree/-get-parent-id old-block)
               left-id (tree/-get-left-id old-block)]
-          (when-let [block (get-block-from-react-refs parent-id left-id)]
+          (when-let [block (-> (get-block-from-react-refs parent-id left-id)
+                             (deref)
+                             :block)]
             (let [atom-still-mine? (= block-id (tree/-get-id block))]
               (when atom-still-mine?
                 (let [new-parent-id (tree/-get-parent-id this)
@@ -119,11 +148,13 @@
                   (if (and
                         (= new-parent-id parent-id)
                         (= new-left-id left-id))
-                    (save-block-refs parent-id left-id block)
+                    (do (prn "-save")
+                        (save-block-refs parent-id left-id block))
                     (del-block-refs parent-id left-id)))))))
         (let [parent-id (tree/-get-parent-id this)
               left-id (tree/-get-left-id this)]
-          (save-block-refs parent-id left-id this)))
+          (do (prn-2-3-2-18 "-save2" parent-id left-id (get-in this [:data :block/id]))
+              (save-block-refs parent-id left-id this))))
       (db-outliner/save-block conn data)))
 
   (-del [this]
@@ -132,7 +163,9 @@
       (when-let [old-block (get-block-by-id block-id)]
         (let [parent-id (tree/-get-parent-id old-block)
               left-id (tree/-get-left-id old-block)]
-          (if-let [data (get-block-from-react-refs parent-id left-id)]
+          (if-let [data (-> (get-block-from-react-refs parent-id left-id)
+                          (deref)
+                          :block)]
             (let [atom-still-mine? (= block-id (:block/id data))]
               (when atom-still-mine?
                 (del-block-refs parent-id left-id))))))
@@ -358,6 +391,19 @@
   [init-node node-number]
   (let [number (atom (dec node-number))]
     (deref (render number init-node nil))))
+
+
+{
+
+ [2 3] (atom nil)
+
+ }
+
+
+{:level-1
+ {:level-2
+  {:level-3 1}
+  {:level-4 2}}}
 
 (deftest test-render-react-tree
   "

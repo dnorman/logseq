@@ -27,7 +27,10 @@
             (add-watch react-ref ident
               (fn [_key _atom old-state new-state]
                 (when-not (= old-state new-state)
-                  (prn "prn watch:" (mapv #(get-in % [:data :block/id]) [old-state new-state]))
+                  (prn "prn watch:" (mapv (fn [x]
+                                            {:parent-id (:parent-id x)
+                                             :left-id (:left-id x)
+                                             :block-id (get-in x [:block :data :block/id])}) [old-state new-state]))
                   (binding [*from-watching-fn* true]
                     (reset! (:result component) (f))
                     (let [f-path (rest (get-in @react-defines [ident :f-path]))]
